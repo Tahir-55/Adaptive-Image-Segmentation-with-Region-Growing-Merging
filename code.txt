@@ -1,0 +1,275 @@
+#Region Growing
+import cv2
+import numpy as np
+import matplotlib.pyplot as plt
+import random
+
+# Function to load an image and convert it to grayscale if necessary
+def load_image(image_path):
+    image = cv2.imread(image_path)
+    if image is None:
+        raise FileNotFoundError(f"Image file at '{image_path}' could not be found or opened.")
+    if len(image.shape) == 3:
+        image_gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    else:
+        image_gray = image
+    return image, image_gray
+
+# Function to display an image
+def show_image(image, title="Image"):
+    plt.figure(figsize=(8, 8))
+    plt.imshow(image, cmap='gray')
+    plt.title(title)
+    plt.axis('off')
+    plt.show()
+
+import numpy as np
+import cv2
+from scipy import interpolate
+import matplotlib.pyplot as plt
+from skimage import img_as_float
+from google.colab import files
+from skimage import io
+
+# Function to upload an image
+def upload_image():
+    uploaded = files.upload()
+    for filename in uploaded.keys():
+        image = io.imread(filename)
+        return img_as_float(image)
+
+# Helper function to display images
+def display_images(images, titles):
+    fig, axs = plt.subplots(1, len(images), figsize=(20, 20))
+    for ax, img, title in zip(axs, images, titles):
+        ax.imshow(img)
+        ax.set_title(title)
+        ax.axis('off')
+    plt.show()
+
+# Function to normalize images
+def normalize_image(image):
+    min_val = np.min(image)
+    max_val = np.max(image)
+    return (image - min_val) / (max_val - min_val)
+
+# Function to enhance image contrast
+def enhance_contrast(image, factor=1.5):
+    if len(image.shape) == 3:
+        image = np.mean(image, axis=2)  # Convert to grayscale if needed
+    return np.clip(image * factor, 0, 1)
+
+# Function to adjust brightness
+def adjust_brightness(image, factor=1.2):
+    return np.clip(image * factor, 0, 1)
+
+# ARBH (Adaptive Rational B-spline Hybrid) interpolation
+def ARBH_interpolation(image, scale_factor):
+    result = np.zeros((image.shape[0] * scale_factor, image.shape[1] * scale_factor, image.shape[2]))
+    for c in range(image.shape[2]):
+        x = np.arange(0, image.shape[1])
+        y = np.arange(0, image.shape[0])
+        f = interpolate.RectBivariateSpline(y, x, image[:, :, c])
+        xnew = np.linspace(0, image.shape[1] - 1, image.shape[1] * scale_factor)
+        ynew = np.linspace(0, image.shape[0] - 1, image.shape[0] * scale_factor)
+        result[:, :, c] = f(ynew, xnew)
+    return result
+
+# Laplacian interpolation
+def Laplacian_interpolation(image, scale_factor):
+    result = np.zeros((image.shape[0] * scale_factor, image.shape[1] * scale_factor, image.shape[2]))
+    for c in range(image.shape[2]):
+        upsampled_image = cv2.resize(image[:, :, c], new_size, interpolation=cv2.INTER_LINEAR)
+        laplacian_img = cv2.Laplacian(upsampled_image, cv2.CV_64F)
+        sharpened_img = upsampled_image + laplacian_img
+        result[:, :, c] = np.clip(sharpened_img, 0, 1)  # Ensure pixel values are in the valid range
+    return result
+
+# Upload image
+image = upload_image()
+
+# Resizing parameters
+scale_factor = 2
+new_size = (image.shape[1] * scale_factor, image.shape[0] * scale_factor)
+
+# Bilinear interpolation
+bilinear_img = cv2.resize(image, new_size, interpolation=cv2.INTER_LINEAR)
+
+# Bicubic interpolation
+bicubic_img = cv2.resize(image, new_size, interpolation=cv2.INTER_CUBIC)
+
+# ARBH interpolation
+arbhi_img = ARBH_interpolation(image, scale_factor)
+
+# Laplacian interpolation
+laplacian_img = Laplacian_interpolation(image, scale_factor)
+
+# Normalize images
+image = normalize_image(image)
+bilinear_img = normalize_image(bilinear_img)
+bicubic_img = normalize_image(bicubic_img)
+arbhi_img = normalize_image(arbhi_img)
+laplacian_img = normalize_image(laplacian_img)
+
+# Enhance contrast
+laplacian_img = enhance_contrast(laplacian_img)
+
+# Adjust brightness
+bilinear_img = adjust_brightness(bilinear_img)
+bicubic_img = adjust_brightness(bicubic_img)
+arbhi_img = adjust_brightness(arbhi_img)
+laplacian_img = adjust_brightness(laplacian_img)
+
+# Displaying the results
+display_images([image, bilinear_img, bicubic_img, arbhi_img, laplacian_img],
+               ["Original", "Bilinear Interpolation", "Bicubic Interpolation", "ARBH Interpolation", "Laplacian Interpolation"])
+
+# Function to perform region growing
+def region_growing(image, seed, threshold):
+    height, width = image.shape
+    segmented = np.zeros_like(image)
+    visited = np.zeros_like(image, dtype=bool)
+    stack = [seed]
+
+    while stack:
+        x, y = stack.pop()
+        if x < 0 or x >= height or y < 0 or y >= width:
+            continue
+        if visited[x, y]:
+            continue
+
+        visited[x, y] = True
+        segmented[x, y] = 255
+
+        for dx in [-1, 0, 1]:
+            for dy in [-1, 0, 1]:
+                nx, ny = x + dx, y + dy
+                if 0 <= nx < height and 0 <= ny < width and not visited[nx, ny]:
+                    if abs(int(image[x, y]) - int(image[nx, ny])) < threshold:
+                        stack.append((nx, ny))
+
+    return segmented
+
+# Main function to process the image for region growing
+def process_image_region_growing(image_path, seed, threshold):
+    try:
+        image, image_gray = load_image(image_path)
+    except FileNotFoundError as e:
+        print(e)
+        return
+
+    print(f"Processing with seed: {seed} and threshold: {threshold}")
+    segmented_image = region_growing(image_gray, seed, threshold)
+
+    # Show the result
+    show_image(segmented_image, title="Region Growing Result")
+
+# Code to upload image file in Google Colab
+from google.colab import files
+uploaded = files.upload()
+
+# Use the first uploaded image
+image_path = list(uploaded.keys())[0]
+
+# Load the image to determine its dimensions
+image, image_gray = load_image(image_path)
+height, width = image_gray.shape
+
+# Generate random seed coordinates and a random threshold
+seed_x = random.randint(0, height - 1)
+seed_y = random.randint(0, width - 1)
+threshold = random.randint(5, 10)  # Adjust the range as needed
+
+print(f"Using random seed coordinates: ({seed_x}, {seed_y})")
+print(f"Using random threshold: {threshold}")
+
+# Process the image
+process_image_region_growing(image_path, seed=(seed_x, seed_y), threshold=threshold)
+
+
+#Region Merging
+import cv2
+import numpy as np
+import matplotlib.pyplot as plt
+from skimage.measure import label, regionprops
+import random
+
+# Function to load an image and convert it to grayscale if necessary
+def load_image(image_path):
+    image = cv2.imread(image_path)
+    if image is None:
+        raise FileNotFoundError(f"Image file at '{image_path}' could not be found or opened.")
+    if len(image.shape) == 3:
+        image_gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    else:
+        image_gray = image
+    return image, image_gray
+
+# Function to display an image
+def show_image(image, title="Image"):
+    plt.figure(figsize=(8, 8))
+    plt.imshow(image, cmap='gray')
+    plt.title(title)
+    plt.axis('off')
+    plt.show()
+
+# Function to perform initial segmentation using thresholding
+def initial_segmentation(image_gray, threshold_value):
+    _, initial_segments = cv2.threshold(image_gray, threshold_value, 255, cv2.THRESH_BINARY)
+    return initial_segments
+
+# Function to perform region merging
+def region_merging(image, initial_segments, threshold):
+    labeled_image = label(initial_segments)
+    regions = regionprops(labeled_image)
+
+    height, width = image.shape
+    print(f"Image shape: {image.shape}")
+    print(f"Labeled image shape: {labeled_image.shape}")
+
+    for region in regions:
+        for coord in region.coords:
+            x, y = coord
+            for dx in [-1, 0, 1]:
+                for dy in [-1, 0, 1]:
+                    nx, ny = x + dx, y + dy
+                    if 0 <= nx < height and 0 <= ny < width:
+                        if labeled_image[nx, ny] != labeled_image[x, y]:
+                            if abs(int(image[x, y]) - int(image[nx, ny])) < threshold:
+                                labeled_image[nx, ny] = labeled_image[x, y]
+
+    return labeled_image
+
+# Main function to process the image for region merging
+def process_image_region_merging(image_path, threshold):
+    try:
+        image, image_gray = load_image(image_path)
+
+        # Generate an initial segmentation using thresholding
+        initial_segments = initial_segmentation(image_gray, 128)  # Using 128 as the threshold value
+
+    except FileNotFoundError as e:
+        print(e)
+        return
+    except ValueError as e:
+        print(e)
+        return
+
+    merged_image = region_merging(image_gray, initial_segments, threshold)
+
+    # Show the result
+    show_image(merged_image, title="Region Merging Result")
+
+# Code to upload image files in Google Colab
+from google.colab import files
+print("Upload the original image.")
+uploaded = files.upload()
+image_path = list(uploaded.keys())[0]
+
+# Generate a random threshold
+threshold = random.randint(5, 20)  # Adjust the range as needed
+
+print(f"Using random threshold: {threshold}")
+
+# Process the image
+process_image_region_merging(image_path, threshold)
